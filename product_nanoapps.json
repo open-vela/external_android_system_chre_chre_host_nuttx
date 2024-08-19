@@ -1,0 +1,4 @@
+{ "source_dir": "/data/nanoapp",
+  "nanoapps": [
+    "hello_world"
+]}
