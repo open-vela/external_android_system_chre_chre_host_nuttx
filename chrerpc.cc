@@ -20,6 +20,7 @@
 #include <netpacket/rpmsg.h>
 #include <sys/epoll.h>
 #include <sys/socket.h>
+#include <sys/un.h>
 #include <utils/SystemClock.h>
 
 #include <atomic>
@@ -31,7 +32,10 @@
 #include "chre_host/file_stream.h"
 #include "chre_host/napp_header.h"
 
+#ifndef PRELOAD_CONFIG
 #define PRELOAD_CONFIG "/vendor/etc/chre/product_nanoapps.json"
+#endif
+
 #ifdef CHRE_DAEMON_DEBUG
 #define PRELOAD_CONFIG_DEBUG "/data/etc/chre/product_nanoapps.json"
 #endif
@@ -57,26 +61,33 @@ int createEpollFd(int fdToEpoll) {
 }
 }  // anonymous namespace
 
-ChreRpc::ChreRpc(int domain) : mHandle(-1) { (void)domain; }
+ChreRpc::ChreRpc(int domain) : mHandle(-1) { mDomain = domain; }
 
 int ChreRpc::connectSocketServer() {
   struct sockaddr* addr;
   socklen_t addrlen = 0;
-  struct sockaddr_rpmsg raddr = {
-      .rp_family = AF_RPMSG,
-      .rp_cpu = CHRE_SERVICE_CPUNAME,
-      .rp_name = "",
-  };
-
-  mHandle = socket(PF_RPMSG, SOCK_STREAM, 0);
+  if (mDomain == AF_UNIX) {
+    struct sockaddr_un uaddr;
+    uaddr.sun_family = AF_UNIX;
+    addr = (struct sockaddr*)&uaddr;
+    strlcpy(uaddr.sun_path, SOCKET_NAME, UNIX_PATH_MAX);
+    addrlen = sizeof(struct sockaddr_un);
+    mHandle = socket(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0);
+  } else {
+    struct sockaddr_rpmsg raddr = {
+        .rp_family = AF_RPMSG,
+        .rp_cpu = CHRE_SERVICE_CPUNAME,
+        .rp_name = "",
+    };
+    addr = (struct sockaddr*)&raddr;
+    strlcpy(raddr.rp_name, SOCKET_NAME, RPMSG_SOCKET_NAME_SIZE);
+    addrlen = sizeof(struct sockaddr_rpmsg);
+    mHandle = socket(PF_RPMSG, SOCK_STREAM, 0);
+  }
   if (mHandle < 0) {
     LOGE("mHandle create failed errno=%d\n", errno);
     return -1;
   }
-
-  addr = (struct sockaddr*)&raddr;
-  strlcpy(raddr.rp_name, SOCKET_NAME, RPMSG_SOCKET_NAME_SIZE);
-  addrlen = sizeof(struct sockaddr_rpmsg);
   int ret = connect(mHandle, addr, addrlen);
   if (ret < 0) {
     if (errno == EINPROGRESS) {
@@ -230,16 +241,17 @@ void ChreRpc::loadPreloadedNanoapp(const std::string& directory,
         ret = false;
       }
     }
-
-    const auto* appHeader =
-        reinterpret_cast<const NanoAppBinaryHeader*>(header.data());
-    uint32_t targetApiVersion = (appHeader->targetChreApiMajorVersion << 24) |
-                                (appHeader->targetChreApiMinorVersion << 16);
-    ret = sendFragmentedNanoappLoad(
-        appHeader->appId, appHeader->appVersion, appHeader->flags,
-        targetApiVersion, nanoapp.data(), nanoapp.size(), transactionId);
-    if (!ret) {
-      LOGE("loadPreloadedNanoapp failed");
+    if (mDomain != AF_UNIX) {
+      const auto* appHeader =
+          reinterpret_cast<const NanoAppBinaryHeader*>(header.data());
+      uint32_t targetApiVersion = (appHeader->targetChreApiMajorVersion << 24) |
+                                  (appHeader->targetChreApiMinorVersion << 16);
+      ret = sendFragmentedNanoappLoad(
+          appHeader->appId, appHeader->appVersion, appHeader->flags,
+          targetApiVersion, nanoapp.data(), nanoapp.size(), transactionId);
+      if (!ret) {
+        LOGE("loadPreloadedNanoapp failed");
+      }
     }
   }
 }
@@ -357,6 +369,68 @@ void ChreRpc::handleDaemonMessage(const uint8_t* message) {
   }
 }
 
+#ifdef CONFIG_CHREHOST
+
+void ChreRpc::onMessageReceived(const unsigned char* messageBuffer,
+                                size_t messageLen) {
+  uint16_t hostClientId;
+  fbs::ChreMessage messageType;
+  if (!HostProtocolHost::extractHostClientIdAndType(
+          messageBuffer, messageLen, &hostClientId, &messageType)) {
+    LOGW("Failed to extract host client ID from message - sending broadcast");
+    hostClientId = ::chre::kHostClientIdUnspecified;
+  }
+  if (messageType == fbs::ChreMessage::LogMessage) {
+    std::unique_ptr<fbs::MessageContainerT> container =
+        fbs::UnPackMessageContainer(messageBuffer);
+    const auto* logMessage = container->message.AsLogMessage();
+    const std::vector<int8_t>& logData = logMessage->buffer;
+
+    getLogger().log(reinterpret_cast<const uint8_t*>(logData.data()),
+                    logData.size());
+  } else if (messageType == fbs::ChreMessage::LogMessageV2) {
+    std::unique_ptr<fbs::MessageContainerT> container =
+        fbs::UnPackMessageContainer(messageBuffer);
+    const auto* logMessage = container->message.AsLogMessageV2();
+    const std::vector<int8_t>& logDataBuffer = logMessage->buffer;
+    const auto* logData =
+        reinterpret_cast<const uint8_t*>(logDataBuffer.data());
+    uint32_t numLogsDropped = logMessage->num_logs_dropped;
+
+    getLogger().logV2(logData, logDataBuffer.size(), numLogsDropped);
+  } else if (messageType == fbs::ChreMessage::TimeSyncRequest) {
+    sendTimeSync(true /* logOnError */);
+  } else if (messageType == fbs::ChreMessage::LowPowerMicAccessRequest) {
+    configureLpma(true /* enabled */);
+  } else if (messageType == fbs::ChreMessage::LowPowerMicAccessRelease) {
+    configureLpma(false /* enabled */);
+  } else if (messageType == fbs::ChreMessage::MetricLog) {
+#ifdef CHRE_DAEMON_METRIC_ENABLED
+    std::unique_ptr<fbs::MessageContainerT> container =
+        fbs::UnPackMessageContainer(messageBuffer);
+    const auto* metricMsg = container->message.AsMetricLog();
+    handleMetricLog(metricMsg);
+#endif  // CHRE_DAEMON_METRIC_ENABLED
+  } else if (messageType == fbs::ChreMessage::NanConfigurationRequest) {
+    std::unique_ptr<fbs::MessageContainerT> container =
+        fbs::UnPackMessageContainer(messageBuffer);
+    handleNanConfigurationRequest(
+        container->message.AsNanConfigurationRequest());
+  } else if (hostClientId == kHostClientIdDaemon) {
+    handleDaemonMessage(messageBuffer);
+  } else if (mHostMessageCallback) {
+    mHostMessageCallback(messageBuffer);
+  }
+}
+
+bool ChreRpc::unloadNanoapp(uint64_t appId) {
+  FlatBufferBuilder builder(64);
+  HostProtocolHost::encodeUnloadNanoappRequest(
+      builder, 1, appId, true /* allowSystemNanoappUnload */);
+  return sendMessageToChre(1, builder.GetBufferPointer(), builder.GetSize());
+}
+
+#else
 void ChreRpc::run() {
   constexpr char kChreSocketName[] = "chre";
   auto serverCb = [&](uint16_t clientId, void* data, size_t len) {
@@ -368,6 +442,7 @@ void ChreRpc::run() {
   };
   mServer.run(kChreSocketName, true /* allowSocketCreation */, serverCb);
 }
+#endif
 
 }  // namespace chre
 }  // namespace android

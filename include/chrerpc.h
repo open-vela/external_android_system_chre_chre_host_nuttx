@@ -44,18 +44,32 @@ class ChreRpc : public FbsDaemonBase {
                             const std::string &name,
                             uint32_t transactionId) override;
 
+#ifdef CONFIG_CHREHOST
+  typedef std::function<void(const void *data)> HostMessageCallback;
+  void registerCallback(HostMessageCallback hostMessageCallback) {
+    mHostMessageCallback = hostMessageCallback;
+  }
+  void run() {}
+  bool unloadNanoapp(uint64_t appId);
+#else
   /**
    * Starts a socket server receive loop for inbound messages.
    */
   void run();
+#endif
 
  protected:
   void handleDaemonMessage(const uint8_t *message) override;
   bool doSendMessage(void *data, size_t length) override;
   void configureLpma(bool enabled) override { (void)enabled; }
+#ifdef CONFIG_CHREHOST
+  void onMessageReceived(const unsigned char *messageBuffer,
+                         size_t messageLen) override;
+#endif
 
  private:
   int mHandle;
+  int mDomain;
   const char *SOCKET_NAME = "chre";
   int connectSocketServer();
   int setup_epoll(int listen_socket);
@@ -64,6 +78,10 @@ class ChreRpc : public FbsDaemonBase {
   std::thread mMsgToHostThread;
   std::atomic_bool mCrashDetected = false;
   std::atomic<bool> mMsgToHostThreadRunning = false;
+
+#ifdef CONFIG_CHREHOST
+  HostMessageCallback mHostMessageCallback;
+#endif
 
   //! Set to the expected transaction, fragment, app ID for loading a nanoapp.
   struct Transaction {
