@@ -436,6 +436,13 @@ bool ChreRpc::unloadNanoapp(uint64_t appId) {
                            builder.GetSize());
 }
 
+bool ChreRpc::queryNanoApps() {
+  FlatBufferBuilder builder(64);
+  HostProtocolHost::encodeNanoappListRequest(builder);
+  return sendMessageToChre(mHostEndpointId, builder.GetBufferPointer(),
+                           builder.GetSize());
+}
+
 #else
 void ChreRpc::run() {
   constexpr char kChreSocketName[] = "chre";
