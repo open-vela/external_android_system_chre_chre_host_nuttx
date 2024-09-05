@@ -163,11 +163,14 @@ extern "C" int main(int argc, char** argv) {
       daemon.loadPreloadedNanoapp("/data/chre", "message_world",
                                   daemon.getHostEndpointId());
       sleep(3);
+      daemon.queryNanoApps();
       for (auto it = testdata.applist.begin(); it != testdata.applist.end();
            ++it) {
         daemon.unloadNanoapp(*it);
         sleep(1);
       }
+      daemon.queryNanoApps();
+      sleep(3);
     }
   }
   return 0;

@@ -53,6 +53,7 @@ class ChreRpc : public FbsDaemonBase {
   void run() {}
   bool unloadNanoapp(uint64_t appId);
   uint16_t getHostEndpointId() { return mHostEndpointId; }
+  bool queryNanoApps();
 #else
   /**
    * Starts a socket server receive loop for inbound messages.
