@@ -19,13 +19,65 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include <vector>
+
 #include "chrerpc.h"
+
+using namespace std;
 
 #ifdef CONFIG_CHREHOST
 
 namespace fbs = ::chre::fbs;
 
-void onMessageReceivedFromChre(const void* message) {
+typedef struct {
+  bool featureInst;
+  int32_t featureType;
+  vector<uint64_t> applist;
+} TestData;
+
+void handleNanoappMessage(const TestData* data,
+                          const fbs::NanoappMessageT& message) {
+  LOGI("featureInst=%d, featureType=%d\n", data->featureInst,
+       data->featureType);
+  LOGI("Got message from nanoapp 0x%" PRIx64 " to endpoint 0x%" PRIx16
+       " with type 0x%" PRIx32 " and length %zu",
+       message.app_id, message.host_endpoint, message.message_type,
+       message.message.size());
+}
+
+void handleNanoappListResponse(const TestData* data,
+                               const fbs::NanoappListResponseT& response) {
+  LOGI("featureInst=%d, featureType=%d\n", data->featureInst,
+       data->featureType);
+  LOGI("Got nanoapp list response with %zu apps:", response.nanoapps.size());
+  data->applist.clear();
+  for (const std::unique_ptr<fbs::NanoappListEntryT>& nanoapp :
+       response.nanoapps) {
+    LOGI("  App ID 0x%016" PRIx64 " version 0x%" PRIx32
+         " permissions 0x%" PRIx32 " enabled %d system %d",
+         nanoapp->app_id, nanoapp->version, nanoapp->permissions,
+         nanoapp->enabled, nanoapp->is_system);
+    data->applist.push_back(nanoapp->app_id);
+  }
+}
+
+void handleLoadNanoappResponse(const TestData* data,
+                               const fbs::LoadNanoappResponseT& response) {
+  LOGI("featureInst=%d, featureType=%d\n", data->featureInst,
+       data->featureType);
+  LOGI("Got load nanoapp response, transaction ID 0x%" PRIx32 " result %d",
+       response.transaction_id, response.success);
+}
+
+void handleUnloadNanoappResponse(const TestData* data,
+                                 const fbs::UnloadNanoappResponseT& response) {
+  LOGI("featureInst=%d, featureType=%d\n", data->featureInst,
+       data->featureType);
+  LOGI("Got unload nanoapp response, transaction ID 0x%" PRIx32 " result %d",
+       response.transaction_id, response.success);
+}
+
+void onMessageReceivedFromChre(TestData* data, const void* message) {
   fbs::NanoappMessageT nMsg;
   std::unique_ptr<fbs::MessageContainerT> container =
       fbs::UnPackMessageContainer(message);
@@ -35,9 +87,7 @@ void onMessageReceivedFromChre(const void* message) {
   // maybe need lock
   switch (container->message.type) {
     case fbs::ChreMessage::NanoappMessage:
-      LOGD("get NanoappMessage");
-      nMsg = *msg.AsNanoappMessage();
-      lib_dumpbuffer("NanoappMessage", &nMsg.message[0], nMsg.message.size());
+      handleNanoappMessage(testprivdata, *msg.AsNanoappMessage());
       break;
 
     case fbs::ChreMessage::HubInfoResponse:
@@ -45,15 +95,15 @@ void onMessageReceivedFromChre(const void* message) {
       break;
 
     case fbs::ChreMessage::NanoappListResponse:
-      LOGD("onMessageReceivedFromChre NanoappListResponse");
+      handleNanoappListResponse(testprivdata, *msg.AsNanoappListResponse());
       break;
 
     case fbs::ChreMessage::LoadNanoappResponse:
-      LOGD("onMessageReceivedFromChre LoadNanoappResponse");
+      handleLoadNanoappResponse(testprivdata, *msg.AsLoadNanoappResponse());
       break;
 
     case fbs::ChreMessage::UnloadNanoappResponse:
-      LOGD("onMessageReceivedFromChre UnloadNanoappResponse");
+      handleUnloadNanoappResponse(testprivdata, *msg.AsUnloadNanoappResponse());
       break;
 
     case fbs::ChreMessage::DebugDumpData:
@@ -96,17 +146,27 @@ extern "C" int main(int argc, char** argv) {
   if (!daemon.init()) {
     LOGE("failed to init the daemon");
   } else {
-    daemon.registerCallback(onMessageReceivedFromChre);
+    TestData testdata;
+    testdata.featureInst = true;
+    testdata.featureType = 2;
+    auto messageCb = [&testdata](const void* msg) {
+      onMessageReceivedFromChre(&testdata, msg);
+    };
+    daemon.registerCallback(messageCb);
     // preload nanoapp list from product_nanoapps.json
     // daemon.preloadedNanoapps();
     // load a specific nanoapp
     while (1) {
+      daemon.loadPreloadedNanoapp("/data/chre", "hello_world", 1);
+      sleep(1);
       daemon.loadPreloadedNanoapp("/data/chre", "message_world", 1);
       sleep(3);
-      daemon.unloadNanoapp(0x0123456789000003);
-      sleep(5);
+      for (auto it = testdata.applist.begin(); it != testdata.applist.end();
+           ++it) {
+        daemon.unloadNanoapp(*it);
+        sleep(1);
+      }
     }
   }
-
   return 0;
 }
