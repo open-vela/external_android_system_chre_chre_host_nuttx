@@ -49,6 +49,7 @@ class ChreRpc : public FbsDaemonBase {
   void registerCallback(HostMessageCallback hostMessageCallback) {
     mHostMessageCallback = hostMessageCallback;
   }
+  bool isHostThreadRunning() { return mMsgToHostThreadRunning; }
   void run() {}
   bool unloadNanoapp(uint64_t appId);
   uint16_t getHostEndpointId() { return mHostEndpointId; }
