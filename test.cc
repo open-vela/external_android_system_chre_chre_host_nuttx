@@ -156,7 +156,7 @@ extern "C" int main(int argc, char** argv) {
     // preload nanoapp list from product_nanoapps.json
     // daemon.preloadedNanoapps();
     // load a specific nanoapp
-    while (1) {
+    while (daemon.isHostThreadRunning()) {
       daemon.loadPreloadedNanoapp("/data/chre", "hello_world",
                                   daemon.getHostEndpointId());
       sleep(1);
