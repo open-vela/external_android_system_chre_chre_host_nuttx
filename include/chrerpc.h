@@ -51,6 +51,7 @@ class ChreRpc : public FbsDaemonBase {
   }
   void run() {}
   bool unloadNanoapp(uint64_t appId);
+  uint16_t getHostEndpointId() { return mHostEndpointId; }
 #else
   /**
    * Starts a socket server receive loop for inbound messages.
@@ -81,6 +82,7 @@ class ChreRpc : public FbsDaemonBase {
 
 #ifdef CONFIG_CHREHOST
   HostMessageCallback mHostMessageCallback;
+  uint16_t mHostEndpointId = kHostClientIdDaemon;
 #endif
 
   //! Set to the expected transaction, fragment, app ID for loading a nanoapp.

@@ -157,9 +157,11 @@ extern "C" int main(int argc, char** argv) {
     // daemon.preloadedNanoapps();
     // load a specific nanoapp
     while (1) {
-      daemon.loadPreloadedNanoapp("/data/chre", "hello_world", 1);
+      daemon.loadPreloadedNanoapp("/data/chre", "hello_world",
+                                  daemon.getHostEndpointId());
       sleep(1);
-      daemon.loadPreloadedNanoapp("/data/chre", "message_world", 1);
+      daemon.loadPreloadedNanoapp("/data/chre", "message_world",
+                                  daemon.getHostEndpointId());
       sleep(3);
       for (auto it = testdata.applist.begin(); it != testdata.applist.end();
            ++it) {

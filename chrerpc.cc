@@ -298,7 +298,7 @@ bool ChreRpc::sendFragmentAndWaitOnResponse(
       .nanoappId = appId,
   };
   mPreloadedNanoappPending = sendMessageToChre(
-      kHostClientIdDaemon, builder.GetBufferPointer(), builder.GetSize());
+      mHostEndpointId, builder.GetBufferPointer(), builder.GetSize());
   if (!mPreloadedNanoappPending) {
     LOGE("Failed to send nanoapp fragment");
     success = false;
@@ -416,6 +416,11 @@ void ChreRpc::onMessageReceived(const unsigned char* messageBuffer,
         fbs::UnPackMessageContainer(messageBuffer);
     handleNanConfigurationRequest(
         container->message.AsNanConfigurationRequest());
+  } else if (messageType == fbs::ChreMessage::HostEndpointConnected) {
+    std::unique_ptr<fbs::MessageContainerT> container =
+        fbs::UnPackMessageContainer(messageBuffer);
+    mHostEndpointId =
+        container->message.AsHostEndpointConnected()->host_endpoint;
   } else if (hostClientId == kHostClientIdDaemon) {
     handleDaemonMessage(messageBuffer);
   } else if (mHostMessageCallback) {
@@ -427,7 +432,8 @@ bool ChreRpc::unloadNanoapp(uint64_t appId) {
   FlatBufferBuilder builder(64);
   HostProtocolHost::encodeUnloadNanoappRequest(
       builder, 1, appId, true /* allowSystemNanoappUnload */);
-  return sendMessageToChre(1, builder.GetBufferPointer(), builder.GetSize());
+  return sendMessageToChre(mHostEndpointId, builder.GetBufferPointer(),
+                           builder.GetSize());
 }
 
 #else
