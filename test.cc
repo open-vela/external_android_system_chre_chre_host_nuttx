@@ -45,7 +45,7 @@ void handleNanoappMessage(const TestData* data,
        message.message.size());
 }
 
-void handleNanoappListResponse(const TestData* data,
+void handleNanoappListResponse(TestData* data,
                                const fbs::NanoappListResponseT& response) {
   LOGI("featureInst=%d, featureType=%d\n", data->featureInst,
        data->featureType);
@@ -87,7 +87,7 @@ void onMessageReceivedFromChre(TestData* data, const void* message) {
   // maybe need lock
   switch (container->message.type) {
     case fbs::ChreMessage::NanoappMessage:
-      handleNanoappMessage(testprivdata, *msg.AsNanoappMessage());
+      handleNanoappMessage(data, *msg.AsNanoappMessage());
       break;
 
     case fbs::ChreMessage::HubInfoResponse:
@@ -95,15 +95,15 @@ void onMessageReceivedFromChre(TestData* data, const void* message) {
       break;
 
     case fbs::ChreMessage::NanoappListResponse:
-      handleNanoappListResponse(testprivdata, *msg.AsNanoappListResponse());
+      handleNanoappListResponse(data, *msg.AsNanoappListResponse());
       break;
 
     case fbs::ChreMessage::LoadNanoappResponse:
-      handleLoadNanoappResponse(testprivdata, *msg.AsLoadNanoappResponse());
+      handleLoadNanoappResponse(data, *msg.AsLoadNanoappResponse());
       break;
 
     case fbs::ChreMessage::UnloadNanoappResponse:
-      handleUnloadNanoappResponse(testprivdata, *msg.AsUnloadNanoappResponse());
+      handleUnloadNanoappResponse(data, *msg.AsUnloadNanoappResponse());
       break;
 
     case fbs::ChreMessage::DebugDumpData:
