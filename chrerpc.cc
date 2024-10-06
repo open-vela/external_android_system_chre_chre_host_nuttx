@@ -224,26 +224,21 @@ void ChreRpc::loadPreloadedNanoapp(const std::string& directory,
   std::string nanoappFilename = directory + "/" + name;
   if (readFileContents(headerFilename.c_str(), header) &&
       readFileContents(nanoappFilename.c_str(), nanoapp)) {
+    const auto* appHeader =
+        reinterpret_cast<const NanoAppBinaryHeader*>(header.data());
+    mPreloadedNanoappPendingTransaction = {
+        .transactionId = transactionId,
+        .fragmentId = 0,
+        .nanoappId = appHeader->appId,
+    };
     bool ret = true;
     mPreloadedNanoappPending =
         ChreDaemonBase::loadNanoapp(header, name, transactionId);
     if (!mPreloadedNanoappPending) {
       LOGE("Failed to send nanoapp name");
       ret = false;
-    } else {
-      std::chrono::seconds timeout(3);
-      std::unique_lock<std::mutex> lock(mloadedNanoappsMutex);
-      bool signaled = mPreloadedNanoappsCond.wait_for(
-          lock, timeout, [this] { return !mPreloadedNanoappPending; });
-      if (!signaled) {
-        LOGE("nanoappFilename load timed out mPreloadedNanoappPending=%d",
-             mPreloadedNanoappPending);
-        ret = false;
-      }
     }
     if (mDomain != AF_UNIX) {
-      const auto* appHeader =
-          reinterpret_cast<const NanoAppBinaryHeader*>(header.data());
       uint32_t targetApiVersion = (appHeader->targetChreApiMajorVersion << 24) |
                                   (appHeader->targetChreApiMinorVersion << 16);
       ret = sendFragmentedNanoappLoad(
