@@ -81,10 +81,10 @@ class ChreRpc : public FbsDaemonBase {
   std::thread mMsgToHostThread;
   std::atomic_bool mCrashDetected = false;
   std::atomic<bool> mMsgToHostThreadRunning = false;
+  uint16_t mHostEndpointId = kHostClientIdDaemon;
 
 #ifdef CONFIG_CHREHOST
   HostMessageCallback mHostMessageCallback;
-  uint16_t mHostEndpointId = kHostClientIdDaemon;
 #endif
 
   //! Set to the expected transaction, fragment, app ID for loading a nanoapp.
