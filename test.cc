@@ -164,6 +164,7 @@ extern "C" int main(int argc, char** argv) {
                                   daemon.getHostEndpointId());
       sleep(3);
       daemon.queryNanoApps();
+      sleep(1);
       for (auto it = testdata.applist.begin(); it != testdata.applist.end();
            ++it) {
         daemon.unloadNanoapp(*it);
